@@ -1,27 +1,31 @@
 #include <WiFi.h>
-#include <HX711.h>
+#include <HX711_ADC.h>
 #include <ArduinoJson.h>
-
+#if defined(ESP8266)|| defined(ESP32) || defined(AVR)
+#include <EEPROM.h>
+#endif
 void create_json(float weight);
 
 const char* ssid      = "karun";
 const char* password  = "12345678";
-String json;
+String JSON;
 
 const uint16_t port = 52275; // port TCP server
 const char * host = "192.168.43.130"; // ip or dns
 
 // 1. HX711 circuit wiring
-const int LOADCELL_DOUT_PIN = 2;
-const int LOADCELL_SCK_PIN = 4;
+//pins:
+const int HX711_dout = 4; //mcu > HX711 dout pin
+const int HX711_sck = 5; //mcu > HX711 sck pin
 
-// 2. Adjustment settings
-const long LOADCELL_OFFSET = 50682624;
-const long LOADCELL_DIVIDER = 5895655;
-  
 
+//HX711 constructor:
+HX711_ADC LoadCell(HX711_dout, HX711_sck);
 WiFiClient client;
-HX711 loadcell;
+
+const int calVal_eepromAdress = 0;
+unsigned long t = 0;
+
   
 void setup() 
 {
@@ -29,60 +33,101 @@ void setup()
     Serial.begin(57600);
     WiFi.begin(ssid, password);
     
-    loadcell.begin(LOADCELL_DOUT_PIN, LOADCELL_SCK_PIN);
-    loadcell.set_scale(LOADCELL_DIVIDER);
-    loadcell.set_offset(LOADCELL_OFFSET);
 
     Serial.println("Connecting to WiFi");
-      
     while (WiFi.status() != WL_CONNECTED) 
     {  
       Serial.print(".");
-      delay(500);
+      delay(1000);
     }
     
     Serial.println("WiFi connected\nIP address: ");Serial.println(WiFi.localIP());
-    
     Serial.println("Connecting to ");Serial.println(host); 
     
     if (!client.connect(host, port)) 
     {
         Serial.println("Connection failed.");
-        delay(5000);
-        return;
+        delay(2500);return;
+    }
+
+    //////////////HX711/////////////////////////////////////////
+
+    
+    LoadCell.begin();
+    //LoadCell.setReverseOutput(); //uncomment to turn a negative output value to positive
+    float calibrationValue; // calibration value (see example file "Calibration.ino")
+    calibrationValue = 696.0; // uncomment this if you want to set the calibration value in the sketch
+ 
+  #if defined(ESP8266)|| defined(ESP32)
+    EEPROM.begin(512); // uncomment this if you use ESP8266/ESP32 and want to fetch the calibration value from eeprom
+  #endif
+  //EEPROM.get(calVal_eepromAdress, calibrationValue); // uncomment this if you want to fetch the calibration value from eeprom
+  
+    unsigned long stabilizingtime = 2000; // preciscion right after power-up can be improved by adding a few seconds of stabilizing time
+    boolean _tare = true; //set this to false if you don't want tare to be performed in the next step
+  
+    LoadCell.start(stabilizingtime, _tare);
+    
+    if (LoadCell.getTareTimeoutFlag()) 
+    {
+      Serial.println("Timeout, check MCU>HX711 wiring and pin designations");
+      while (1);
+    }
+    else 
+    {
+      LoadCell.setCalFactor(calibrationValue); // set calibration value (float)
+      Serial.println("Startup is complete of hx711");
     }
 }
   
 void loop()
 {
-    int maxloops = 0;
-    create_json(loadcell.get_units(10));
-    Serial.print("Weight: ");Serial.println(loadcell.get_units(10), 2);
-    Serial.print("Weight json: ");Serial.println(json);
+      int maxloops = 0;
+      float i ;
+      static boolean newDataReady = 0;
+      const int serialPrintInterval = 0; //increase value to slow down serial print activity
+
+  
+      if (LoadCell.update()) newDataReady = true;
+
+      // get smoothed value from the dataset:
+      if (newDataReady) 
+      {
+        if (millis() > t + serialPrintInterval) 
+        {
+          i = LoadCell.getData();
+          Serial.print("Load_cell output val: ");
+          Serial.println(i);
+          newDataReady = 0;
+          t = millis();
+        }
+      }
     
-//    client.print(loadcell.get_units(10));
-    client.print(json);
-    
-//    wait for the server's reply to become available
-    while (!client.available() && maxloops < 1000)
-    {
-      maxloops++;
-      delay(1); //delay 1 msec
-    }
-//    
+      create_json(i);
+
+      client.print(JSON);
+      
+  //    wait for the server's reply to become available
+      while (!client.available() && maxloops < 1000)
+      {
+        maxloops++;
+        delay(1); //delay 1 msec
+      }
+ 
 //    delay(100);
 }
 
 void create_json(float weight)
 {
-  StaticJsonDocument<500> doc;
-
-  JsonObject weight_scaler = doc.to<JsonObject>();
+    StaticJsonDocument<500> doc;
   
-  weight_scaler["weight_scaler"] = weight;
+    JsonObject weight_scaler = doc.to<JsonObject>();
+    
+    weight_scaler["weight_scaler"] = weight;
+    
   
-
-  serializeJsonPretty(doc, Serial);
-  serializeJsonPretty(doc, json);
+    serializeJsonPretty(doc, Serial);
+    serializeJsonPretty(doc, JSON);
 
 }
+
