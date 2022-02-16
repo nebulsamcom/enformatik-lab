@@ -6,17 +6,17 @@
 #endif
 void create_json(float weight);
 
-const char* ssid      = "karun";
-const char* password  = "12345678";
+const char* ssid      = "AndroidAPC041";
+const char* password  = "gbli4059";
 String JSON;
 
-const uint16_t port = 52275; // port TCP server
-const char * host = "192.168.43.130"; // ip or dns
+const uint16_t port = 9898; // port TCP server
+const char * host = "192.168.56.214"; // ip or dns
 
 // 1. HX711 circuit wiring
 //pins:
-const int HX711_dout = 4; //mcu > HX711 dout pin
-const int HX711_sck = 5; //mcu > HX711 sck pin
+const int HX711_dout = 2; //mcu > HX711 dout pin
+const int HX711_sck = 4; //mcu > HX711 sck pin
 
 
 //HX711 constructor:
@@ -97,13 +97,13 @@ void loop()
         {
           i = LoadCell.getData();
           Serial.print("Load_cell output val: ");
-          Serial.println(i);
+          Serial.println(i*-10);
           newDataReady = 0;
           t = millis();
         }
       }
     
-      create_json(i);
+      create_json(i*-10);
 
       client.print(JSON);
       
@@ -130,4 +130,3 @@ void create_json(float weight)
     serializeJsonPretty(doc, JSON);
 
 }
-

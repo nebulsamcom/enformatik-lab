@@ -1,0 +1,6 @@
+const char* ssid      = "AndroidAPC041";
+const char* password  = "gbli4059";
+String JSON;
+
+const uint16_t port = 9898; // port TCP server
+const char * host = "192.168.56.214"; // ip or dns
